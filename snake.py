@@ -22,7 +22,7 @@ OPPOSITES = {
     DOWN: UP
 }
 
-class SnakeGame():
+class SnakeEnvironment():
     difficulties = {
         HARD: 0.05,
         MEDIUM: 0.1,
@@ -159,7 +159,7 @@ class SnakeGame():
     def _initialize_window(self):
         # settings of the screen
         self.window=turtle.Screen()
-        self.window.title('Snake game made by S.M.H Naghavi')
+        self.window.title(str(self.score))
         self.window.bgcolor('white')
         width = (self.GRID_SIZE+1)*self.GRID_CELL_WIDTH_PX+(.75*self.GRID_CELL_WIDTH_PX)
         height = (self.GRID_SIZE+1)*self.GRID_CELL_WIDTH_PX+(.75*self.GRID_CELL_WIDTH_PX)
@@ -197,13 +197,13 @@ class SnakeGame():
             self.can_turn = False
         elif self.snake.direction != OPPOSITES[direction]:
             self.buffered_direction = direction
+            print(f"can't move right now, buffered direction {direction}")
 
         print (f'set snake direction to {self.snake.direction}')
 
         self.move_lock.release()
 
     def _move_snake(self):
-        print(self.snake.direction)
         if self.snake.direction == UP or self.snake.direction == DOWN:
             self.snake.sety(self.snake.ycor() + self.action_direction[self.snake.direction])
         
@@ -236,6 +236,15 @@ class SnakeGame():
         """
         return ((head.xcor() + 300) / self.GRID_CELL_WIDTH_PX, (head.ycor() + 300) / self.GRID_CELL_WIDTH_PX)
 
+    def get_state_features(self):
+        # up is wall
+        # down is wall
+        # right is wall
+        # left is wall
+        # up is food
+        # down is food
+        # 
+        pass
 
 class Agent():
     def __init__(self):
@@ -244,7 +253,7 @@ class Agent():
     def get_action(self):
         pass
 
-game = SnakeGame(30, 20, MEDIUM)
+game = SnakeEnvironment(30, 20, MEDIUM)
 game.start_game()
 
 # wn.mainloop()
