@@ -60,6 +60,7 @@ class SnakeEnvironment():
         # to make the turning more smooth
         self.buffered_direction = None
 
+        self.highest_score = 0
         self.score = 0
 
         self._initialize_window()
@@ -107,7 +108,19 @@ class SnakeEnvironment():
 
         self.tail.append(new_tail_piece)
         self.score += 1
+        
+        self._write_score()
+        
         self.window.title(self.score)
+
+    def _write_score(self, game_end=False):
+        style = ('Courier', 13, 'bold')
+        self.current_score_title.clear()
+        self.current_score_title.write(f'Score: {self.score}', move=False, font=style, align='left')
+
+        if game_end:
+            self.top_score_title.clear()
+            self.top_score_title.write(f'Top Score: {self.highest_score}', move=False, font=style, align='left')
 
     def _move_tail(self):
         for index in range(len(self.tail)-1,0,-1):
@@ -159,6 +172,17 @@ class SnakeEnvironment():
     def _initialize_window(self):
         # settings of the screen
         self.window=turtle.Screen()
+        self.current_score_title = turtle.Turtle(visible=False)
+        self.current_score_title.speed(0)
+        self.current_score_title.goto(-self.CELL_MAX, self.CELL_MAX - 10)
+
+        self.top_score_title = turtle.Turtle(visible=False)
+        self.top_score_title.speed(0)
+        self.top_score_title.goto(self.CELL_MAX - 125, self.CELL_MAX - 10)
+
+        self._write_score(True)
+        self.current_score_title.penup()
+        
         self.window.title(str(self.score))
         self.window.bgcolor('white')
         width = (self.GRID_SIZE+1)*self.GRID_CELL_WIDTH_PX+(.75*self.GRID_CELL_WIDTH_PX)
@@ -220,9 +244,15 @@ class SnakeEnvironment():
         for tail_piece in self.tail:
             tail_piece.goto(self.CELL_MAX*2,self.CELL_MAX*2)
 
+        self._place_food()
+
         self.tail.clear()
-        self.score=0
-        self.window.title(str(self.score))
+
+        if self.score > self.highest_score:
+            self.highest_score = self.score
+
+        self.score = 0
+        self._write_score(True)
 
     def get_pixel_coord(self,x, y):
         """ 
