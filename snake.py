@@ -73,6 +73,10 @@ class SnakeEnvironment():
     def _place_food(self):
         x = int(random.randint(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
         y = int(random.randint(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
+
+        while self._tail_collision(x, y) or x == self.snake.xcor() and y == self.snake.ycor():
+            x = int(random.randint(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
+            y = int(random.randint(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
         
         self.food.goto(x,y)
 
@@ -92,9 +96,9 @@ class SnakeEnvironment():
                 or self.snake.ycor() < -self.CELL_MAX
                 or self.snake.xcor() < -self.CELL_MAX)
 
-    def _tail_collision(self):
+    def _tail_collision(self, x, y):
         for tail_piece in self.tail:
-            if self.snake.xcor() == tail_piece.xcor() and self.snake.ycor() == tail_piece.ycor():
+            if x == tail_piece.xcor() and y == tail_piece.ycor():
                 return True
 
         return False
@@ -104,7 +108,7 @@ class SnakeEnvironment():
         return self.snake.distance(self.food) < self.GRID_CELL_WIDTH_PX
             
     def _create_new_tail_piece(self):
-        new_tail_piece = self._generate_piece('black', 'square')
+        new_tail_piece = self._generate_piece('gray', 'square')
 
         self.tail.append(new_tail_piece)
         self.score += 1
@@ -137,7 +141,7 @@ class SnakeEnvironment():
                 self._game_over()
 
             # check for tail collision
-            if self._tail_collision():
+            if self._tail_collision(self.snake.xcor(), self.snake.ycor()):
                 self._game_over()
 
             # acquire food
