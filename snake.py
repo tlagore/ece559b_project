@@ -15,8 +15,6 @@ DOWN = 'down'
 
 GAME_OVER_SCORE = -100
 
-
-
 EASY = 'easy'
 MEDIUM = 'medium'
 HARD = 'hard'
@@ -132,9 +130,6 @@ class SnakeEnvironment(gym.Env):
         state_features = self.get_state_features()
         return state_features, reward, reward == GAME_OVER_SCORE
 
-    def reset(self):
-        pass
-
     def render(self, mode='human'):
         pass
 
@@ -205,9 +200,11 @@ class SnakeEnvironment(gym.Env):
             self.tail[index].goto(x,y)
 
     def start_game(self):
+        """ human entry point for the game """
         while True:
             reward = self.run_step()
             state = self.get_state_features()
+            time.sleep(self.sleep_time)
             self.debug_print(reward)
             self.debug_print(state)
 
@@ -261,7 +258,6 @@ class SnakeEnvironment(gym.Env):
             
             self.debug_print(f'distance_before: {distance_before}, distance_after: {distance_after}')
 
-        time.sleep(self.sleep_time)
         return reward
             
 
@@ -376,8 +372,3 @@ class SnakeEnvironment(gym.Env):
         get grid x,y from pixel coordinate
         """
         return ((head.xcor() + 300) / self.GRID_CELL_WIDTH_PX, (head.ycor() + 300) / self.GRID_CELL_WIDTH_PX)
-
-game = SnakeEnvironment(30, 20, EASY, is_human=True, debug=True)
-game.start_game()
-
-# wn.mainloop()
