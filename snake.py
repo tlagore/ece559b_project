@@ -1,7 +1,9 @@
 # python libraries
 import threading
 import time
-import random
+import gym
+import math
+import numpy as np
 
 # third party libraries
 import turtle
@@ -10,6 +12,10 @@ LEFT = 'left'
 RIGHT = 'right'
 UP = 'up'
 DOWN = 'down'
+
+GAME_OVER_SCORE = -100
+
+
 
 EASY = 'easy'
 MEDIUM = 'medium'
@@ -22,22 +28,37 @@ OPPOSITES = {
     DOWN: UP
 }
 
-class SnakeEnvironment():
+class SnakeEnvironment(gym.Env):
+    metadata = {'render.modes': ['human']}
+
+    action_space = [0, 1, 2, 3]
+
+    direction_mapping = {
+        0: LEFT,
+        1: RIGHT,
+        2: UP,
+        3: DOWN
+    }
+
     difficulties = {
         HARD: 0.05,
         MEDIUM: 0.1,
         EASY: 0.2
     }
 
-    def __init__(self, grid_size, grid_cell_size, difficulty, agent=None):
+    def __init__(self, grid_size, grid_cell_size, difficulty, is_human=None, debug=False):
+        self.rng = np.random.default_rng(int(time.time()))
+                
         self.move_lock = threading.Lock()
+        self.debug = debug
 
         if difficulty in self.difficulties:
             self.sleep_time = self.difficulties[difficulty]
         else:
             self.sleep_time = self.difficulties[EASY]
 
-        self.agent = agent
+        # if agent is None we assume human mode
+        self.is_human = is_human
 
         self.GRID_SIZE = grid_size
         self.GRID_CELL_WIDTH_PX = grid_cell_size
@@ -67,16 +88,66 @@ class SnakeEnvironment():
         self._initialize_snake()
         self._initialize_food()
 
-        if not self.agent:
+        if self.is_human:
             self._create_window_bindings()
+
+        # needs to be set after snake is initialized, allows dynamic state space if we add features
+        self.state_space = len(self.get_state_features())
+
+    def debug_print(self, message):
+        if self.debug:
+            print(message)
+
+    def reset(self):
+        self._game_over()
+
+    def get_state_features(self):
+        x, y = self.snake.xcor(), self.snake.ycor()
+        move_size = self.GRID_CELL_WIDTH_PX
+
+        wall_left = int(x - move_size < -280)
+        wall_right = int(x + move_size > 280)
+        wall_down = int(y - move_size < -280)
+        wall_up = int(y + move_size > 280)
+
+        body_left = int(self._tail_collision(x - move_size, y))
+        body_right = int(self._tail_collision(x + move_size, y))
+        body_down = int(self._tail_collision(x, y - move_size))
+        body_up = int(self._tail_collision(x, y + move_size))
+
+        food_left = int(self._acquired_food(x - move_size, y))
+        food_right = int(self._acquired_food(x + move_size, y))
+        food_down = int(self._acquired_food(x, y - move_size))
+        food_up = int(self._acquired_food(x, y + move_size))
+
+        x_dist = self.food.xcor() - x
+        y_dist = self.food.ycor() - y
+
+        return [wall_left, wall_right, wall_down, wall_up, body_left, body_right, body_down, body_up, food_left, food_right, food_down, food_up, x_dist, y_dist]
+
+    def step(self, action):
+        # needs to return 
+        self._turn(self.direction_mapping[action])
+        reward = self.run_step()
+        state_features = self.get_state_features()
+        return state_features, reward, reward == GAME_OVER_SCORE
+
+    def reset(self):
+        pass
+
+    def render(self, mode='human'):
+        pass
+
+    def close(self):
+        pass
     
     def _place_food(self):
-        x = int(random.randint(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
-        y = int(random.randint(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
+        x = int(self.rng.integers(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
+        y = int(self.rng.integers(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
 
         while self._tail_collision(x, y) or x == self.snake.xcor() and y == self.snake.ycor():
-            x = int(random.randint(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
-            y = int(random.randint(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
+            x = int(self.rng.integers(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
+            y = int(self.rng.integers(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
         
         self.food.goto(x,y)
 
@@ -103,9 +174,10 @@ class SnakeEnvironment():
 
         return False
 
-    def _acquired_food(self):
+    def _acquired_food(self, x, y):
         # acquire food
-        return self.snake.distance(self.food) < self.GRID_CELL_WIDTH_PX
+        distance = math.sqrt((x - self.food.xcor())**2 + (y - self.food.ycor())**2)
+        return distance < self.GRID_CELL_WIDTH_PX
             
     def _create_new_tail_piece(self):
         new_tail_piece = self._generate_piece('gray', 'square')
@@ -134,36 +206,64 @@ class SnakeEnvironment():
 
     def start_game(self):
         while True:
-            self.window.update()
+            reward = self.run_step()
+            state = self.get_state_features()
+            self.debug_print(reward)
+            self.debug_print(state)
 
-            # check for wall collision
-            if self._wall_collision(): 
-                self._game_over()
+    def run_step(self):
+        self._move_tail()
 
-            # check for tail collision
-            if self._tail_collision(self.snake.xcor(), self.snake.ycor()):
-                self._game_over()
+        prev_loc = (self.snake.xcor(), self.snake.ycor())
+    
+        #move the segment 0 to the head
+        if len(self.tail) > 0:
+            self.tail[0].goto(self.snake.xcor(),self.snake.ycor())
 
-            # acquire food
-            if self._acquired_food():
-                self._create_new_tail_piece()
-                self._place_food()
-                
-            self._move_tail()
+        self._move_snake()
 
-            #move the segment 0 to the head
-            if len(self.tail) > 0:
-                self.tail[0].goto(self.snake.xcor(),self.snake.ycor())
+        next_loc = (self.snake.xcor(), self.snake.ycor())
 
-            self._move_snake()
+        self.window.update()
 
+        reward = None
+        
+        # unbuffer the direction that was stored for smoother turning in between sleep intervals
+        if self.is_human and self.buffered_direction:
+            self.move_lock.acquire()
+            self._change_direction(self.buffered_direction)
+            self.can_turn = False
+            self.move_lock.release()
+            self.buffered_direction = None
 
-            # unbuffer the direction that was stored for smoother turning in between sleep intervals
-            if self.buffered_direction:
-                self.snake.direction = self.buffered_direction
-                self.buffered_direction = None
+        # check for wall collision
+        if self._wall_collision(): 
+            self._game_over()
+            reward = GAME_OVER_SCORE
 
-            time.sleep(self.sleep_time)
+        # check for tail collision
+        if self._tail_collision(self.snake.xcor(), self.snake.ycor()):
+            self._game_over()
+            reward = GAME_OVER_SCORE
+
+        # acquire food
+        if self._acquired_food(self.snake.xcor(), self.snake.ycor()):
+            self._create_new_tail_piece()
+            self._place_food()
+            reward = 75
+
+        if not reward:
+            food_loc = (self.food.xcor(), self.food.ycor())
+            distance_before = math.sqrt((prev_loc[0]-food_loc[0])**2 + (prev_loc[1]-food_loc[1])**2)
+            distance_after = math.sqrt((next_loc[0]-food_loc[0])**2 + (next_loc[1]-food_loc[1])**2)
+
+            reward = 1 if distance_after < distance_before else -1
+            
+            self.debug_print(f'distance_before: {distance_before}, distance_after: {distance_after}')
+
+        time.sleep(self.sleep_time)
+        return reward
+            
 
     def _create_window_bindings(self):
         #binding
@@ -215,19 +315,26 @@ class SnakeEnvironment():
 
         self._place_food()
 
+    def _change_direction(self, direction):
+        if self.snake.direction != OPPOSITES[direction]:
+            self.snake.direction = direction
+
     def _turn(self, direction):
         self.move_lock.acquire()
 
-        print(f"in turn with direction = {direction}, snake_direction={self.snake.direction}, can_turn={self.can_turn}")
+        self.debug_print(f"in turn with direction = {direction}, snake_direction={self.snake.direction}, can_turn={self.can_turn}")
 
-        if self.snake.direction != OPPOSITES[direction] and self.can_turn:
-            self.snake.direction = direction
-            self.can_turn = False
-        elif self.snake.direction != OPPOSITES[direction]:
+        if self.can_turn:
+            self._change_direction(direction)
+
+            if self.is_human:
+                self.can_turn = False
+
+        elif self.is_human and self.snake.direction != OPPOSITES[direction]:
             self.buffered_direction = direction
-            print(f"can't move right now, buffered direction {direction}")
+            self.debug_print(f"can't move right now, buffered direction {direction}")
 
-        print (f'set snake direction to {self.snake.direction}')
+        self.debug_print(f'set snake direction to {self.snake.direction}')
 
         self.move_lock.release()
 
@@ -270,24 +377,7 @@ class SnakeEnvironment():
         """
         return ((head.xcor() + 300) / self.GRID_CELL_WIDTH_PX, (head.ycor() + 300) / self.GRID_CELL_WIDTH_PX)
 
-    def get_state_features(self):
-        # up is wall
-        # down is wall
-        # right is wall
-        # left is wall
-        # up is food
-        # down is food
-        # 
-        pass
-
-class Agent():
-    def __init__(self):
-        """ """
-
-    def get_action(self):
-        pass
-
-game = SnakeEnvironment(30, 20, MEDIUM)
+game = SnakeEnvironment(30, 20, EASY, is_human=True, debug=True)
 game.start_game()
 
 # wn.mainloop()
