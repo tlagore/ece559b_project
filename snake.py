@@ -29,13 +29,13 @@ OPPOSITES = {
 class SnakeEnvironment(gym.Env):
     metadata = {'render.modes': ['human']}
 
-    action_space = [0, 1, 2, 3]
+    action_space = [0,1,2,3]
 
     direction_mapping = {
-        0: LEFT,
+        0: UP,
         1: RIGHT,
-        2: UP,
-        3: DOWN
+        2: DOWN,
+        3: LEFT
     }
 
     difficulties = {
@@ -118,10 +118,21 @@ class SnakeEnvironment(gym.Env):
         food_down = int(self._acquired_food(x, y - move_size))
         food_up = int(self._acquired_food(x, y + move_size))
 
-        x_dist = self.food.xcor() - x
-        y_dist = self.food.ycor() - y
+        # # TODO: Fix these
+        food_to_the_left = int(x - self.food.xcor() >= 0)
+        food_to_the_right = int(self.food.xcor() - x >= 0)
+        food_downwards = int(y - self.food.ycor() >= 0)
+        food_upwards = int(self.food.ycor() - y >= 0)
 
-        return [wall_left, wall_right, wall_down, wall_up, body_left, body_right, body_down, body_up, food_left, food_right, food_down, food_up, x_dist, y_dist]
+        moving_left = int(self.snake.direction == LEFT)
+        moving_right = int(self.snake.direction == RIGHT)
+        moving_up = int(self.snake.direction == UP)
+        moving_down = int(self.snake.direction == DOWN)
+
+        # x_dist = self.food.xcor() - x
+        # y_dist = self.food.ycor() - y
+
+        return [wall_left, wall_right, wall_down, wall_up, body_left, body_right, body_down, body_up, food_left, food_right, food_down, food_up, food_to_the_left, food_to_the_right, food_upwards, food_downwards, moving_left, moving_right, moving_up, moving_down]
 
     def step(self, action):
         # needs to return 
@@ -136,14 +147,17 @@ class SnakeEnvironment(gym.Env):
     def close(self):
         pass
     
-    def _place_food(self):
+    def _get_random_x_y(self):
         x = int(self.rng.integers(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
         y = int(self.rng.integers(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
+        return x, y
+
+    def _place_food(self):
+        x, y = self._get_random_x_y()
 
         while self._tail_collision(x, y) or x == self.snake.xcor() and y == self.snake.ycor():
-            x = int(self.rng.integers(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
-            y = int(self.rng.integers(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
-        
+            x, y = self._get_random_x_y()
+
         self.food.goto(x,y)
 
     def _generate_piece(self, colour, shape):
@@ -202,11 +216,7 @@ class SnakeEnvironment(gym.Env):
     def start_game(self):
         """ human entry point for the game """
         while True:
-            reward = self.run_step()
-            state = self.get_state_features()
             time.sleep(self.sleep_time)
-            self.debug_print(reward)
-            self.debug_print(state)
 
     def run_step(self):
         self._move_tail()
@@ -255,9 +265,9 @@ class SnakeEnvironment(gym.Env):
             distance_after = math.sqrt((next_loc[0]-food_loc[0])**2 + (next_loc[1]-food_loc[1])**2)
 
             reward = 1 if distance_after < distance_before else -1
-            
-            self.debug_print(f'distance_before: {distance_before}, distance_after: {distance_after}')
 
+        self.debug_print(reward)
+            
         return reward
             
 
@@ -290,14 +300,13 @@ class SnakeEnvironment(gym.Env):
         self.window.setup(width=width,height=height)
         self.window.tracer(0)
 
-    def _initialize_snake(self, starting_pos = None):
+    def _initialize_snake(self):
         #creating the head object
         self.snake = self._generate_piece('black', 'square')
 
-        if starting_pos:
-            self.snake.goto(starting_pos[0], starting_pos[1])
-        else:
-            self.snake.goto(0,0)
+        x, y = self._get_random_x_y()
+
+        self.snake.goto(x,y)
 
         self.snake.direction='freeze'
 
@@ -318,8 +327,6 @@ class SnakeEnvironment(gym.Env):
     def _turn(self, direction):
         self.move_lock.acquire()
 
-        self.debug_print(f"in turn with direction = {direction}, snake_direction={self.snake.direction}, can_turn={self.can_turn}")
-
         if self.can_turn:
             self._change_direction(direction)
 
@@ -328,9 +335,6 @@ class SnakeEnvironment(gym.Env):
 
         elif self.is_human and self.snake.direction != OPPOSITES[direction]:
             self.buffered_direction = direction
-            self.debug_print(f"can't move right now, buffered direction {direction}")
-
-        self.debug_print(f'set snake direction to {self.snake.direction}')
 
         self.move_lock.release()
 
@@ -344,7 +348,8 @@ class SnakeEnvironment(gym.Env):
         self.can_turn = True
 
     def _game_over(self):
-        self.snake.goto(0,0)
+        x, y = self._get_random_x_y()
+        self.snake.goto(x, y)
         self.snake.direction='freeze'
 
         # can't delete the pieces so we just hide them off grid

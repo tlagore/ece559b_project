@@ -6,8 +6,9 @@ from turtle import update
 
 import numpy as np
 import tensorflow as tf
+
 from tensorflow import keras
-from tensorflow.keras import layers
+from tensorflow.keras import layers, losses
 from tensorflow.python.keras.backend import convert_inputs_if_ragged
 from tensorflow.python.ops.gen_math_ops import Exp
 
@@ -19,16 +20,16 @@ class Configuration():
     epsilon: float = 0.01
     epsilon_floor: float = 0.001
     epsilon_decay: float = 0.999
-    discount: float = 0.90
+    discount: float = 0.95
     alpha: float = 0.01
     num_hidden_layers: int = 1
 
     # Agent config
-    learning_batch_size: int = 8
-    update_after_actions: int = 4
+    learning_batch_size: int = 100
+    update_after_actions: int = 6
     replay_buffer_size: int = 5000
-    num_episodes: int = 50
-    max_steps: int = 5000
+    num_episodes: int = 1000
+    max_steps: int = 6000
 
 @dataclass
 class Experience():
@@ -53,8 +54,11 @@ class Agent():
         self.num_actions = len(self.actions)
         self.update_after_actions = config.update_after_actions
 
+        self.loss_fn = losses.MeanSquaredError()
+
         # learning rate
         self.alpha = config.alpha
+        self.optimizer = keras.optimizers.Adam(lr=self.alpha)
 
         self.learning_batch_size = config.learning_batch_size
 
@@ -64,14 +68,13 @@ class Agent():
         self.max_steps = config.max_steps
 
         self.model = self.initialize_dqn()
-        self.target_model = self.initialize_dqn()
+        # self.target_model = self.initialize_dqn()
 
     def initialize_dqn(self):
         input_size = self.environment.state_space
         output_size = len(self.actions)
 
         inputs = keras.Input(shape=(input_size,))
-        optimizer = keras.optimizers.Adam(lr=self.alpha)
 
         hidden_size = (2/3)*input_size+output_size
 
@@ -86,7 +89,7 @@ class Agent():
             output = layers.Dense(output_size, activation='softmax')(inputs)
 
         dqn = keras.Model(inputs=[inputs], outputs=[output])
-        dqn.compile(loss='mse', optimizer=optimizer)
+        dqn.compile(optimizer=self.optimizer, loss=self.loss_fn)
         return dqn
 
     def get_action(self, state):
@@ -105,6 +108,7 @@ class Agent():
         self.replay_buffer.appendleft(experience)
 
     def replay_experience(self):
+        print("REPLAY!!!")
         batch: list[Experience] = self.rng.choice(self.replay_buffer, self.learning_batch_size)
         states = []
         actions = []
@@ -121,29 +125,43 @@ class Agent():
 
         dones = tf.convert_to_tensor(dones)
         states = np.array(states)
+        next_states = np.array(next_states)
         actions = np.array(actions)
 
-        future_rewards = self.target_model.predict(next_states)
-        updated_q_values = rewards + self.discount * tf.reduce_max(future_rewards, axis=1) #*(1-dones)-dones
-        q_values = self.model(states)
-        self.model.fit(states, q_values, epochs=1)
+
+        states = np.squeeze(states)
+        next_states = np.squeeze(next_states)
+
+        targets = rewards + self.discount*(np.amax(self.model.predict_on_batch(next_states), axis=1))*(1-dones)
+        targets_full = self.model.predict_on_batch(states)
+
+        ind = np.array([i for i in range(self.learning_batch_size)])
+        targets_full[[ind], [actions]] = targets
+
+        self.model.fit(states, targets_full, epochs=1, verbose=0)
+
+
+        # future_rewards = self.model.predict(next_states)
+        # # future_rewards = self.target_model.predict(next_states)
+        # updated_q_values = rewards + self.discount * np.amax(future_rewards, axis=1)*(1-dones)-dones
+
+        # masks = tf.one_hot(actions, self.num_actions)
+
+        # with tf.GradientTape() as tape:
+        #     # Train the model on the states and updated Q-values
+        #     q_values = self.model(states)
+
+        #     # Apply the masks to the Q-values to get the Q-value for action taken
+        #     q_action = tf.reduce_sum(q_values, axis=1)
+        #     # Calculate loss between new Q-value and old Q-value
+        #     loss = self.loss_fn(updated_q_values, q_action)
+
+        # # Backpropagation
+        # grads = tape.gradient(loss, self.model.trainable_variables)
+        # self.optimizer.apply_gradients(zip(grads, self.model.trainable_variables))
 
         if self.epsilon > self.epsilon_floor:
             self.epsilon *= self.epsilon_decay
-        # print(updated_q_values)
-
-        # # Only calculate loss on the updated Q-Values
-        # masks = tf.one_hot(actions, self.num_actions)
-        # print(masks)
-
-        # with tf.GradientTape() as tape:
-        #     # train model on the states and updated Q-Values
-        #     q_values = self.model.fit(states)
-
-        #     # Apply the masks to the Q-values to get the Q-value for action taken
-        #     q_action = tf.reduce_sum(tf.multiply(q_values, masks), axis=1)
-
-        print(updated_q_values)
 
     def train(self):
         """
@@ -153,37 +171,39 @@ class Agent():
         for i in range(self.num_episodes):
             self.environment.reset()
             state = self.environment.get_state_features()
-            
+
             episode_reward = 0
 
             for j in range(self.max_steps):
                 state_tensor = tf.convert_to_tensor(state)
                 state_tensor = tf.expand_dims(state_tensor, 0)
                 action = self.get_action(state_tensor)
-                
+
                 next_state, reward, done = self.environment.step(action)
 
                 self.buffer_experience(Experience(state, action, reward, next_state, done))
 
                 episode_reward += reward
 
-                state = next_state
 
                 if j % self.update_after_actions == 0 and len(self.replay_buffer) >= self.learning_batch_size:
                     self.replay_experience()
 
                 if done:
-                    print("DONE!")
-                    # print(f'final state before dying: {str(prev_state)}')
+                    # print("DONE!")
+                    print(f'snake: {self.environment.snake.xcor()},{self.environment.snake.ycor()}: {state}')
+                    # time.sleep(10)
                     # print(f'episode: {e+1}/{episode}, score: {score}')
                     break
 
-                time.sleep(0.1)
+                state = next_state
+                if i > 500:
+                    time.sleep(0.1)
 
 
 
 if __name__ == "__main__":
-    snake_env = SnakeEnvironment(30, 20, 'easy', is_human=False, debug=True)
+    snake_env = SnakeEnvironment(30, 20, 'easy', is_human=False, debug=False)
     config = Configuration()
     agent = Agent(config, snake_env)
     agent.train()
