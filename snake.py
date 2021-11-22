@@ -14,6 +14,7 @@ UP = 'up'
 DOWN = 'down'
 
 GAME_OVER_SCORE = -100
+FOOD_SCORE = 25
 
 EASY = 'easy'
 MEDIUM = 'medium'
@@ -103,10 +104,13 @@ class SnakeEnvironment(gym.Env):
         x, y = self.snake.xcor(), self.snake.ycor()
         move_size = self.GRID_CELL_WIDTH_PX
 
-        wall_left = int(x - move_size < -280)
-        wall_right = int(x + move_size > 280)
-        wall_down = int(y - move_size < -280)
-        wall_up = int(y + move_size > 280)
+        min_cell = -self.CELL_MAX+self.GRID_CELL_WIDTH_PX
+        max_cell = self.CELL_MAX-self.GRID_CELL_WIDTH_PX
+
+        wall_left = int(x - move_size < min_cell)
+        wall_right = int(x + move_size > max_cell)
+        wall_down = int(y - move_size < min_cell)
+        wall_up = int(y + move_size > max_cell)
 
         body_left = int(self._tail_collision(x - move_size, y))
         body_right = int(self._tail_collision(x + move_size, y))
@@ -118,21 +122,20 @@ class SnakeEnvironment(gym.Env):
         food_down = int(self._acquired_food(x, y - move_size))
         food_up = int(self._acquired_food(x, y + move_size))
 
-        # # TODO: Fix these
         food_to_the_left = int(x - self.food.xcor() >= 0)
         food_to_the_right = int(self.food.xcor() - x >= 0)
         food_downwards = int(y - self.food.ycor() >= 0)
         food_upwards = int(self.food.ycor() - y >= 0)
 
-        moving_left = int(self.snake.direction == LEFT)
-        moving_right = int(self.snake.direction == RIGHT)
-        moving_up = int(self.snake.direction == UP)
-        moving_down = int(self.snake.direction == DOWN)
+        # moving_left = int(self.snake.direction == LEFT)
+        # moving_right = int(self.snake.direction == RIGHT)
+        # moving_up = int(self.snake.direction == UP)
+        # moving_down = int(self.snake.direction == DOWN)
 
         # x_dist = self.food.xcor() - x
         # y_dist = self.food.ycor() - y
 
-        return [wall_left, wall_right, wall_down, wall_up, body_left, body_right, body_down, body_up, food_left, food_right, food_down, food_up, food_to_the_left, food_to_the_right, food_upwards, food_downwards, moving_left, moving_right, moving_up, moving_down]
+        return [wall_left, wall_right, wall_down, wall_up, body_left, body_right, body_down, body_up, food_left, food_right, food_down, food_up, food_to_the_left, food_to_the_right, food_upwards, food_downwards]
 
     def step(self, action):
         # needs to return 
@@ -257,13 +260,13 @@ class SnakeEnvironment(gym.Env):
         if self._acquired_food(self.snake.xcor(), self.snake.ycor()):
             self._create_new_tail_piece()
             self._place_food()
-            reward = 75
+            reward = FOOD_SCORE
 
         if not reward:
             food_loc = (self.food.xcor(), self.food.ycor())
             distance_before = math.sqrt((prev_loc[0]-food_loc[0])**2 + (prev_loc[1]-food_loc[1])**2)
             distance_after = math.sqrt((next_loc[0]-food_loc[0])**2 + (next_loc[1]-food_loc[1])**2)
-
+            
             reward = 1 if distance_after < distance_before else -1
 
         self.debug_print(reward)

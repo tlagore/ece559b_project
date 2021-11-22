@@ -17,7 +17,7 @@ from snake import SnakeEnvironment
 @dataclass
 class Configuration():
     # DQN config
-    epsilon: float = 0.01
+    epsilon: float = 0.05
     epsilon_floor: float = 0.001
     epsilon_decay: float = 0.999
     discount: float = 0.95
@@ -98,6 +98,7 @@ class Agent():
 
         if self.rng.random() < self.epsilon:
             action = self.rng.choice(self.actions)
+            print("TRYING A RANDOM ACTION!!!")
         else:
             predicted_values = self.model(state, training=False)
             action = np.argmax(predicted_values)
@@ -132,7 +133,7 @@ class Agent():
         states = np.squeeze(states)
         next_states = np.squeeze(next_states)
 
-        targets = rewards + self.discount*(np.amax(self.model.predict_on_batch(next_states), axis=1))*(1-dones)
+        targets = rewards + self.discount*(np.amax(self.model.predict_on_batch(next_states), axis=1))# *(1-dones)
         targets_full = self.model.predict_on_batch(states)
 
         ind = np.array([i for i in range(self.learning_batch_size)])
