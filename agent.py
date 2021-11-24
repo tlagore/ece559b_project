@@ -1,8 +1,7 @@
 from collections import deque
 from dataclasses import dataclass
-from math import exp
+import random
 import time
-from turtle import update
 
 import numpy as np
 import tensorflow as tf
@@ -27,9 +26,9 @@ class Configuration():
     # Agent config
     learning_batch_size: int = 100
     update_after_actions: int = 6
-    replay_buffer_size: int = 5000
+    replay_buffer_size: int = 800
     num_episodes: int = 1000
-    max_steps: int = 6000
+    max_steps: int = 4000
 
 @dataclass
 class Experience():
@@ -100,8 +99,11 @@ class Agent():
             action = self.rng.choice(self.actions)
             print("TRYING A RANDOM ACTION!!!")
         else:
+            start = time.time()
             predicted_values = self.model(state, training=False)
             action = np.argmax(predicted_values)
+
+            # print(f'predict took {time.time() - start}')
 
         return action
 
@@ -109,8 +111,7 @@ class Agent():
         self.replay_buffer.appendleft(experience)
 
     def replay_experience(self):
-        print("REPLAY!!!")
-        batch: list[Experience] = self.rng.choice(self.replay_buffer, self.learning_batch_size)
+        batch: list[Experience] = random.choices(self.replay_buffer, k=self.learning_batch_size) # self.rng.choice(self.replay_buffer, self.learning_batch_size)
         states = []
         actions = []
         rewards = []
@@ -128,7 +129,6 @@ class Agent():
         states = np.array(states)
         next_states = np.array(next_states)
         actions = np.array(actions)
-
 
         states = np.squeeze(states)
         next_states = np.squeeze(next_states)
@@ -174,18 +174,19 @@ class Agent():
             state = self.environment.get_state_features()
 
             episode_reward = 0
-
+            print(f'episode: {i}')
             for j in range(self.max_steps):
                 state_tensor = tf.convert_to_tensor(state)
                 state_tensor = tf.expand_dims(state_tensor, 0)
                 action = self.get_action(state_tensor)
 
+                start = time.time()
                 next_state, reward, done = self.environment.step(action)
+                # print(f'step took {time.time() - start}')
 
                 self.buffer_experience(Experience(state, action, reward, next_state, done))
 
                 episode_reward += reward
-
 
                 if j % self.update_after_actions == 0 and len(self.replay_buffer) >= self.learning_batch_size:
                     self.replay_experience()
@@ -198,13 +199,12 @@ class Agent():
                     break
 
                 state = next_state
-                if i > 500:
-                    time.sleep(0.1)
-
-
+                if i > 100:
+                    self.environment._render = True
+                    # time.sleep(0.1)
 
 if __name__ == "__main__":
-    snake_env = SnakeEnvironment(30, 20, 'easy', is_human=False, debug=False)
+    snake_env = SnakeEnvironment(30, 20, 'easy', is_human=False, debug=False, render=False, randomize_state=True)
     config = Configuration()
     agent = Agent(config, snake_env)
     agent.train()

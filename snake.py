@@ -1,4 +1,5 @@
 # python libraries
+from random import random
 import threading
 import time
 import gym
@@ -45,7 +46,7 @@ class SnakeEnvironment(gym.Env):
         EASY: 0.2
     }
 
-    def __init__(self, grid_size, grid_cell_size, difficulty, is_human=None, debug=False):
+    def __init__(self, grid_size, grid_cell_size, difficulty, is_human=None, debug=False, render=False, randomize_state=False):
         self.rng = np.random.default_rng(int(time.time()))
                 
         self.move_lock = threading.Lock()
@@ -58,6 +59,8 @@ class SnakeEnvironment(gym.Env):
 
         # if agent is None we assume human mode
         self.is_human = is_human
+        self._render = render
+        self.randomize_state = randomize_state
 
         self.GRID_SIZE = grid_size
         self.GRID_CELL_WIDTH_PX = grid_cell_size
@@ -83,6 +86,8 @@ class SnakeEnvironment(gym.Env):
         self.highest_score = 0
         self.score = 0
 
+        ## TODO: Fix the game so if we are not in render mode that there's no grid stuff happening.
+        ## At least do a proper reset with window.reset()
         self._initialize_window()
         self._initialize_snake()
         self._initialize_food()
@@ -173,11 +178,11 @@ class SnakeEnvironment(gym.Env):
         piece.penup()
         return piece
 
-    def _wall_collision(self):
-        return (self.snake.xcor() > self.CELL_MAX 
-                or self.snake.ycor() > self.CELL_MAX 
-                or self.snake.ycor() < -self.CELL_MAX
-                or self.snake.xcor() < -self.CELL_MAX)
+    def _wall_collision(self, x, y):
+        return (x > self.CELL_MAX 
+                or y > self.CELL_MAX 
+                or y < -self.CELL_MAX
+                or x < -self.CELL_MAX)
 
     def _tail_collision(self, x, y):
         for tail_piece in self.tail:
@@ -219,6 +224,7 @@ class SnakeEnvironment(gym.Env):
     def start_game(self):
         """ human entry point for the game """
         while True:
+            self.run_step()
             time.sleep(self.sleep_time)
 
     def run_step(self):
@@ -234,7 +240,9 @@ class SnakeEnvironment(gym.Env):
 
         next_loc = (self.snake.xcor(), self.snake.ycor())
 
-        self.window.update()
+
+        if self._render:
+            self.window.update()
 
         reward = None
         
@@ -247,7 +255,7 @@ class SnakeEnvironment(gym.Env):
             self.buffered_direction = None
 
         # check for wall collision
-        if self._wall_collision(): 
+        if self._wall_collision(self.snake.xcor(), self.snake.ycor()): 
             self._game_over()
             reward = GAME_OVER_SCORE
 
@@ -273,7 +281,6 @@ class SnakeEnvironment(gym.Env):
             
         return reward
             
-
     def _create_window_bindings(self):
         #binding
         self.window.listen()
@@ -294,6 +301,7 @@ class SnakeEnvironment(gym.Env):
         self.top_score_title.goto(self.CELL_MAX - 125, self.CELL_MAX - 10)
 
         self._write_score(True)
+        self.snake = None
         self.current_score_title.penup()
         
         self.window.title(str(self.score))
@@ -305,9 +313,13 @@ class SnakeEnvironment(gym.Env):
 
     def _initialize_snake(self):
         #creating the head object
-        self.snake = self._generate_piece('black', 'square')
+        if not self.snake:
+            self.snake = self._generate_piece('black', 'square')
 
-        x, y = self._get_random_x_y()
+        if self.randomize_state:
+            x, y = self._get_random_x_y()
+        else:
+            x, y = 0, 0
 
         self.snake.goto(x,y)
 
@@ -342,32 +354,68 @@ class SnakeEnvironment(gym.Env):
         self.move_lock.release()
 
     def _move_snake(self):
-        if self.snake.direction == UP or self.snake.direction == DOWN:
-            self.snake.sety(self.snake.ycor() + self.action_direction[self.snake.direction])
-        
-        if self.snake.direction==LEFT or self.snake.direction == RIGHT:
-            self.snake.setx(self.snake.xcor() + self.action_direction[self.snake.direction])
-
+        x, y = self.get_cell_by_direction(self.snake.xcor(), self.snake.ycor(), self.snake.direction)
+        self.snake.setx(x)
+        self.snake.sety(y)
         self.can_turn = True
 
+    def get_cell_by_direction(self, x, y, direction):
+        if direction == UP or direction == DOWN:
+            return (x, y + self.action_direction[direction])
+
+        if direction == LEFT or direction == RIGHT:
+            return (x + self.action_direction[direction], y)
+
     def _game_over(self):
-        x, y = self._get_random_x_y()
-        self.snake.goto(x, y)
-        self.snake.direction='freeze'
+        self._initialize_snake()
 
         # can't delete the pieces so we just hide them off grid
         for tail_piece in self.tail:
+            # tail_piece.reset()
             tail_piece.goto(self.CELL_MAX*2,self.CELL_MAX*2)
 
-        self._place_food()
-
         self.tail.clear()
+
+        if self.randomize_state:
+            self.generate_random_tail()
+
+        self._place_food()
 
         if self.score > self.highest_score:
             self.highest_score = self.score
 
         self.score = 0
         self._write_score(True)
+        
+        if self._render:
+            self.window.update()
+
+    def generate_random_tail(self):
+        curx, cury = self.snake.xcor(), self.snake.ycor()
+
+        for _ in range(self.rng.integers(0, 30)):
+            possible_directions = [LEFT,RIGHT,DOWN,UP]
+            direction = self.rng.choice(possible_directions, 1)[0]
+            nextx, nexty = self.get_cell_by_direction(curx, cury, direction)
+
+            while len(possible_directions) > 0 and (self._tail_collision(nextx, nexty) or self._wall_collision(nextx,nexty)):
+                possible_directions.remove(direction)
+
+                if len(possible_directions) == 0:
+                    break
+
+                direction = self.rng.choice(possible_directions, 1)[0]
+                nextx, nexty = self.get_cell_by_direction(curx, cury, direction)
+
+            # we generated our tail into a corner
+            if len(possible_directions) == 0:
+                break
+            else:
+                tail_piece = self._generate_piece('gray', 'square')
+                tail_piece.goto(nextx, nexty)
+                curx = nextx
+                cury = nexty
+                self.tail.append(tail_piece)
 
     def get_pixel_coord(self,x, y):
         """ 
