@@ -204,7 +204,7 @@ class Agent():
                     # time.sleep(0.1)
 
 if __name__ == "__main__":
-    snake_env = SnakeEnvironment(30, 20, 'easy', is_human=False, debug=False, render=False, randomize_state=True)
+    snake_env = SnakeEnvironment(30, 20, 'easy', is_human=False, debug=False, render=True, randomize_state=True)
     config = Configuration()
     agent = Agent(config, snake_env)
     agent.train()
