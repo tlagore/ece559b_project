@@ -371,8 +371,9 @@ class SnakeEnvironment(gym.Env):
 
         # can't delete the pieces so we just hide them off grid
         for tail_piece in self.tail:
-            # tail_piece.reset()
-            tail_piece.goto(self.CELL_MAX*2,self.CELL_MAX*2)
+            tail_piece.reset()
+            tail_piece.ht()
+            # tail_piece.goto(self.CELL_MAX*2,self.CELL_MAX*2)
 
         self.tail.clear()
 
