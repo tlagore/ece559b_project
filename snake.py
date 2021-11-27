@@ -240,7 +240,6 @@ class SnakeEnvironment(gym.Env):
 
         next_loc = (self.snake.xcor(), self.snake.ycor())
 
-
         if self._render:
             self.window.update()
 
@@ -422,10 +421,10 @@ class SnakeEnvironment(gym.Env):
         """ 
         get pixel x,y from grid coordinate
         """
-        return (x * self.GRID_CELL_WIDTH_PX - 300, y * self.GRID_CELL_WIDTH_PX - 300)
+        return (x * self.GRID_CELL_WIDTH_PX - self.CELL_MAX, y * self.GRID_CELL_WIDTH_PX - self.CELL_MAX)
 
     def get_grid_coord(self, head):
         """
         get grid x,y from pixel coordinate
         """
-        return ((head.xcor() + 300) / self.GRID_CELL_WIDTH_PX, (head.ycor() + 300) / self.GRID_CELL_WIDTH_PX)
+        return ((head.xcor() + self.CELL_MAX) / self.GRID_CELL_WIDTH_PX, (head.ycor() + self.CELL_MAX) / self.GRID_CELL_WIDTH_PX)

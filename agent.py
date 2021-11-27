@@ -169,6 +169,7 @@ class Agent():
         Train the agent
         """
 
+        rewards = []
         for i in range(self.num_episodes):
             self.environment.reset()
             state = self.environment.get_state_features()
@@ -198,10 +199,15 @@ class Agent():
                     # print(f'episode: {e+1}/{episode}, score: {score}')
                     break
 
+                
+
                 state = next_state
-                if i > 100:
-                    self.environment._render = True
+                if i > 15:
+                    time.sleep(0.05)
+                    # self.environment._render = True
                     # time.sleep(0.1)
+
+            rewards.append(episode_reward)
 
 if __name__ == "__main__":
     snake_env = SnakeEnvironment(30, 20, 'easy', is_human=False, debug=False, render=True, randomize_state=True)
