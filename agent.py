@@ -11,7 +11,7 @@ from tensorflow.keras import layers, losses
 from tensorflow.python.keras.backend import convert_inputs_if_ragged
 from tensorflow.python.ops.gen_math_ops import Exp
 
-from snake import SnakeEnvironment
+from snake import SnakeEnvironment, SnakeConfig, StateAttributeType
 
 @dataclass
 class Configuration():
@@ -57,7 +57,7 @@ class Agent():
 
         # learning rate
         self.alpha = config.alpha
-        self.optimizer = keras.optimizers.Adam(lr=self.alpha)
+        self.optimizer = keras.optimizers.Adam(learning_rate=self.alpha)
 
         self.learning_batch_size = config.learning_batch_size
 
@@ -141,7 +141,6 @@ class Agent():
 
         self.model.fit(states, targets_full, epochs=1, verbose=0)
 
-
         # future_rewards = self.model.predict(next_states)
         # # future_rewards = self.target_model.predict(next_states)
         # updated_q_values = rewards + self.discount * np.amax(future_rewards, axis=1)*(1-dones)-dones
@@ -174,6 +173,9 @@ class Agent():
             self.environment.reset()
             state = self.environment.get_state_features()
 
+            # with np.printoptions(edgeitems=50):
+            #     print(state)
+
             episode_reward = 0
             print(f'episode: {i}')
             for j in range(self.max_steps):
@@ -181,7 +183,7 @@ class Agent():
                 state_tensor = tf.expand_dims(state_tensor, 0)
                 action = self.get_action(state_tensor)
 
-                start = time.time()
+                # start = time.time()
                 next_state, reward, done = self.environment.step(action)
                 # print(f'step took {time.time() - start}')
 
@@ -194,23 +196,33 @@ class Agent():
 
                 if done:
                     # print("DONE!")
-                    print(f'snake: {self.environment.snake.xcor()},{self.environment.snake.ycor()}: {state}')
+                    # print(f'snake: {self.environment.snake.xcor()},{self.environment.snake.ycor()}: {state}')
                     # time.sleep(10)
                     # print(f'episode: {e+1}/{episode}, score: {score}')
                     break
 
-                
-
                 state = next_state
-                if i > 15:
-                    time.sleep(0.05)
+                # if i > 15:
+                    #time.sleep(0.05)
                     # self.environment._render = True
                     # time.sleep(0.1)
 
             rewards.append(episode_reward)
 
+
+
 if __name__ == "__main__":
-    snake_env = SnakeEnvironment(30, 20, 'easy', is_human=False, debug=False, render=True, randomize_state=True)
+    conf = SnakeConfig()
+    conf.difficulty = 'easy'
+    conf.grid_cell_size = 20
+    conf.grid_size = 30
+    conf.is_human = False
+    conf.render = True
+    conf.randomize_state = True
+    conf.debug = False
+    conf.method = StateAttributeType.LINEAR
+
+    snake_env = SnakeEnvironment(conf)
     config = Configuration()
     agent = Agent(config, snake_env)
     agent.train()

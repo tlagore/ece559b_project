@@ -1,5 +1,8 @@
 # python libraries
+from dataclasses import dataclass
+import enum
 from random import random
+from enum import Enum
 import threading
 import time
 import gym
@@ -21,12 +24,37 @@ EASY = 'easy'
 MEDIUM = 'medium'
 HARD = 'hard'
 
+FOOD_COLOR = (51,255,51)
+TAIL_COLOR = (163,163,163)
+HEAD_COLOR = (0,0,0)
+
+# there is no wall color, but we define it for the NN
+WALL_COLOR = (255,51,221)
+
+BACKGROUND_COLOR = (255,255,255)
+
 OPPOSITES = {
     LEFT: RIGHT,
     RIGHT: LEFT,
     UP: DOWN,
     DOWN: UP
 }
+
+class StateAttributeType(Enum):
+    CONVOLUTION = 0
+    LINEAR = 1
+
+
+@dataclass
+class SnakeConfig():
+    grid_size: int = 30
+    grid_cell_size: int = 20
+    difficulty: str = 'easy'
+    is_human: bool = False
+    debug: bool = False
+    render: bool = True
+    randomize_state: bool = True
+    method: StateAttributeType = StateAttributeType.LINEAR
 
 class SnakeEnvironment(gym.Env):
     metadata = {'render.modes': ['human']}
@@ -46,31 +74,33 @@ class SnakeEnvironment(gym.Env):
         EASY: 0.2
     }
 
-    def __init__(self, grid_size, grid_cell_size, difficulty, is_human=None, debug=False, render=False, randomize_state=False):
+    def __init__(self, conf: SnakeConfig):
+        self.config = conf
+
         self.rng = np.random.default_rng(int(time.time()))
                 
         self.move_lock = threading.Lock()
-        self.debug = debug
+        self.debug = conf.debug
 
-        if difficulty in self.difficulties:
-            self.sleep_time = self.difficulties[difficulty]
+        if conf.difficulty in self.difficulties:
+            self.sleep_time = self.difficulties[conf.difficulty]
         else:
             self.sleep_time = self.difficulties[EASY]
 
         # if agent is None we assume human mode
-        self.is_human = is_human
-        self._render = render
-        self.randomize_state = randomize_state
+        self.is_human = conf.is_human
+        self._render = conf.render
+        self.randomize_state = conf.randomize_state
 
-        self.GRID_SIZE = grid_size
-        self.GRID_CELL_WIDTH_PX = grid_cell_size
-        self.CELL_MAX = grid_size*grid_cell_size/2
+        self.GRID_SIZE = conf.grid_size
+        self.GRID_CELL_WIDTH_PX = conf.grid_cell_size
+        self.CELL_MAX = conf.grid_size*conf.grid_cell_size/2
 
         self.action_direction = {
-            LEFT: -grid_cell_size,
-            RIGHT: grid_cell_size,
-            UP: grid_cell_size,
-            DOWN: -grid_cell_size
+            LEFT: -conf.grid_cell_size,
+            RIGHT: conf.grid_cell_size,
+            UP: conf.grid_cell_size,
+            DOWN: -conf.grid_cell_size
         }
         
         self.tail=[]
@@ -96,7 +126,8 @@ class SnakeEnvironment(gym.Env):
             self._create_window_bindings()
 
         # needs to be set after snake is initialized, allows dynamic state space if we add features
-        self.state_space = len(self.get_state_features())
+        state_space = self.get_state_features().flatten()
+        self.state_space = len(state_space)
 
     def debug_print(self, message):
         if self.debug:
@@ -105,7 +136,29 @@ class SnakeEnvironment(gym.Env):
     def reset(self):
         self._game_over()
 
-    def get_state_features(self):
+    def get_convolution_features(self):
+        # add 2 to each grid size to represent walls
+        features = np.ndarray(shape=(self.GRID_SIZE+2, self.GRID_SIZE+2, 3))
+        min = int(-self.CELL_MAX - self.GRID_CELL_WIDTH_PX)
+        max = int(self.CELL_MAX + 2*self.GRID_CELL_WIDTH_PX)
+        for x in range(min, max, self.GRID_CELL_WIDTH_PX):
+            for y in range(min, max, self.GRID_CELL_WIDTH_PX):
+                (grid_x, grid_y) = self.get_grid_coord(x,y)
+                if self.snake.xcor() == x and self.snake.ycor() == y:
+                    features[grid_x, grid_y] = HEAD_COLOR
+                elif self.food.xcor() == x and self.food.ycor() == y:
+                    features[grid_x, grid_y] = FOOD_COLOR
+                elif (self._wall_collision(x, y)):
+                    print("wall collision")
+                    features[grid_x, grid_y] = WALL_COLOR
+                elif (self._tail_collision(x,y)):
+                    features[grid_x, grid_y] = TAIL_COLOR
+                else:
+                    features[grid_x, grid_y] = BACKGROUND_COLOR
+
+        return features
+
+    def get_linear_features(self):
         x, y = self.snake.xcor(), self.snake.ycor()
         move_size = self.GRID_CELL_WIDTH_PX
 
@@ -140,7 +193,15 @@ class SnakeEnvironment(gym.Env):
         # x_dist = self.food.xcor() - x
         # y_dist = self.food.ycor() - y
 
-        return [wall_left, wall_right, wall_down, wall_up, body_left, body_right, body_down, body_up, food_left, food_right, food_down, food_up, food_to_the_left, food_to_the_right, food_upwards, food_downwards]
+        lst = [wall_left, wall_right, wall_down, wall_up, body_left, body_right, body_down, body_up, food_left, food_right, food_down, food_up, food_to_the_left, food_to_the_right, food_upwards, food_downwards]
+        return np.asarray(lst)
+
+    def get_state_features(self):
+        if self.config.method == StateAttributeType.LINEAR:
+            return self.get_linear_features()
+        elif self.config.method == StateAttributeType.CONVOLUTION:
+            return self.get_convolution_features()
+        
 
     def step(self, action):
         # needs to return 
@@ -168,11 +229,15 @@ class SnakeEnvironment(gym.Env):
 
         self.food.goto(x,y)
 
-    def _generate_piece(self, colour, shape):
+    def _generate_piece(self, shape, rgb_color1, rgb_color2=None ):
         piece = turtle.Turtle()
 
         piece.shape(shape)
-        piece.color(colour)
+        if rgb_color2:
+            piece.color(rgb_color1, rgb_color2)
+        else:
+            piece.color(rgb_color1)
+
         piece.speed(0)
 
         piece.penup()
@@ -197,7 +262,7 @@ class SnakeEnvironment(gym.Env):
         return distance < self.GRID_CELL_WIDTH_PX
             
     def _create_new_tail_piece(self):
-        new_tail_piece = self._generate_piece('gray', 'square')
+        new_tail_piece = self._generate_piece('square', TAIL_COLOR)
 
         self.tail.append(new_tail_piece)
         self.score += 1
@@ -291,6 +356,7 @@ class SnakeEnvironment(gym.Env):
     def _initialize_window(self):
         # settings of the screen
         self.window=turtle.Screen()
+        self.window.colormode(255)
         self.current_score_title = turtle.Turtle(visible=False)
         self.current_score_title.speed(0)
         self.current_score_title.goto(-self.CELL_MAX, self.CELL_MAX - 10)
@@ -313,7 +379,7 @@ class SnakeEnvironment(gym.Env):
     def _initialize_snake(self):
         #creating the head object
         if not self.snake:
-            self.snake = self._generate_piece('black', 'square')
+            self.snake = self._generate_piece('square', HEAD_COLOR)
 
         if self.randomize_state:
             x, y = self._get_random_x_y()
@@ -329,7 +395,7 @@ class SnakeEnvironment(gym.Env):
         self.food=turtle.Turtle()
         self.food.speed(0)
         self.food.shape('square')
-        self.food.color('green')
+        self.food.color(FOOD_COLOR)
         self.food.penup()
 
         self._place_food()
@@ -411,7 +477,7 @@ class SnakeEnvironment(gym.Env):
             if len(possible_directions) == 0:
                 break
             else:
-                tail_piece = self._generate_piece('gray', 'square')
+                tail_piece = self._generate_piece('square', TAIL_COLOR)
                 tail_piece.goto(nextx, nexty)
                 curx = nextx
                 cury = nexty
@@ -423,8 +489,8 @@ class SnakeEnvironment(gym.Env):
         """
         return (x * self.GRID_CELL_WIDTH_PX - self.CELL_MAX, y * self.GRID_CELL_WIDTH_PX - self.CELL_MAX)
 
-    def get_grid_coord(self, head):
+    def get_grid_coord(self, x, y):
         """
         get grid x,y from pixel coordinate
         """
-        return ((head.xcor() + self.CELL_MAX) / self.GRID_CELL_WIDTH_PX, (head.ycor() + self.CELL_MAX) / self.GRID_CELL_WIDTH_PX)
+        return (int((x + self.CELL_MAX) / self.GRID_CELL_WIDTH_PX), int((y+ self.CELL_MAX) / self.GRID_CELL_WIDTH_PX))
