@@ -10,11 +10,14 @@ from tensorflow import keras
 from tensorflow.keras import layers, losses
 from tensorflow.python.keras.backend import convert_inputs_if_ragged
 from tensorflow.python.ops.gen_math_ops import Exp
+from tensorflow.python.ops.math_ops import multiply
+
+import pandas as pd
 
 from snake import SnakeEnvironment, SnakeConfig, StateAttributeType
 
 @dataclass
-class Configuration():
+class AgentConfiguration():
     # DQN config
     epsilon: float = 0.05
     epsilon_floor: float = 0.001
@@ -26,6 +29,7 @@ class Configuration():
     # Agent config
     learning_batch_size: int = 100
     update_after_actions: int = 6
+    update_target_network: int = 100
     replay_buffer_size: int = 800
     num_episodes: int = 1000
     max_steps: int = 4000
@@ -39,7 +43,7 @@ class Experience():
     done: bool
 
 class Agent():
-    def __init__(self, config : Configuration, snake_environment : SnakeEnvironment):
+    def __init__(self, config : AgentConfiguration, snake_environment : SnakeEnvironment, method : StateAttributeType):
         self.environment = snake_environment
 
         self.rng = np.random.default_rng(int(time.time()))
@@ -52,6 +56,8 @@ class Agent():
         self.actions = self.environment.action_space
         self.num_actions = len(self.actions)
         self.update_after_actions = config.update_after_actions
+
+        self.update_target_netork = config.update_target_network
 
         self.loss_fn = losses.MeanSquaredError()
 
@@ -66,11 +72,40 @@ class Agent():
         self.num_episodes = config.num_episodes
         self.max_steps = config.max_steps
 
-        self.model = self.initialize_dqn()
-        # self.target_model = self.initialize_dqn()
+        self.model = self.initialize_dqn(method)
+        self.target_model = self.initialize_dqn(method)
 
-    def initialize_dqn(self):
-        input_size = self.environment.state_space
+    def initialize_dqn(self, method: StateAttributeType):
+        if method == StateAttributeType.LINEAR:
+            return self.initialize_linear_state_dqn()
+
+        elif method == StateAttributeType.CONVOLUTION:
+            return self.initialize_convolution_state_dqn()
+
+    def initialize_convolution_state_dqn(self):
+        input_shape = self.environment.state_space_shape
+        # input_size = self.environment.state_space_size
+        output_size = len(self.actions)
+
+        inputs = keras.Input(shape=input_shape)
+
+        # hidden_size = (2/3)*input_size+output_size
+
+        # output 8 filters, 3x3 kernel size
+        convolve_1 = layers.Conv2D(32, 8, strides=4, activation="relu")(inputs)
+        convolve_2 = layers.Conv2D(64, 4, strides=2, activation="relu")(convolve_1)
+        convolve_2 = layers.Conv2D(64, 3, strides=1, activation="relu")(convolve_1)
+        flatten_layer = layers.Flatten()(convolve_2)
+        dense_layer = layers.Dense(512, activation="relu")(flatten_layer)
+        output = layers.Dense(output_size, activation='softmax')(dense_layer)
+
+        dqn = keras.Model(inputs=[inputs], outputs=[output])
+        dqn.compile(optimizer=self.optimizer, loss=self.loss_fn)
+        print(dqn.summary())
+        return dqn
+
+    def initialize_linear_state_dqn(self):
+        input_size = self.environment.state_space_size
         output_size = len(self.actions)
 
         inputs = keras.Input(shape=(input_size,))
@@ -99,11 +134,8 @@ class Agent():
             action = self.rng.choice(self.actions)
             print("TRYING A RANDOM ACTION!!!")
         else:
-            start = time.time()
-            predicted_values = self.model(state, training=False)
+            predicted_values = self.target_model(state, training=False)
             action = np.argmax(predicted_values)
-
-            # print(f'predict took {time.time() - start}')
 
         return action
 
@@ -133,7 +165,8 @@ class Agent():
         states = np.squeeze(states)
         next_states = np.squeeze(next_states)
 
-        targets = rewards + self.discount*(np.amax(self.model.predict_on_batch(next_states), axis=1))# *(1-dones)
+        targets = rewards + self.discount*(np.amax(self.target_model.predict_on_batch(next_states), axis=1))
+        # targets = rewards + self.discount*(np.amax(self.model.predict_on_batch(next_states), axis=1))
         targets_full = self.model.predict_on_batch(states)
 
         ind = np.array([i for i in range(self.learning_batch_size)])
@@ -162,11 +195,14 @@ class Agent():
 
         if self.epsilon > self.epsilon_floor:
             self.epsilon *= self.epsilon_decay
+            self.epsilon = max(self.epsilon, self.epsilon_floor)
 
     def train(self):
         """
         Train the agent
         """
+
+        num_moves = 0
 
         rewards = []
         for i in range(self.num_episodes):
@@ -175,10 +211,13 @@ class Agent():
 
             # with np.printoptions(edgeitems=50):
             #     print(state)
-
             episode_reward = 0
             print(f'episode: {i}')
             for j in range(self.max_steps):
+                # df = pd.DataFrame(state.reshape(33, 33))
+                # df.to_csv('state_rgb.csv', index=False)
+                # exit()
+
                 state_tensor = tf.convert_to_tensor(state)
                 state_tensor = tf.expand_dims(state_tensor, 0)
                 action = self.get_action(state_tensor)
@@ -191,7 +230,10 @@ class Agent():
 
                 episode_reward += reward
 
-                if j % self.update_after_actions == 0 and len(self.replay_buffer) >= self.learning_batch_size:
+                if num_moves % self.update_target_netork == 0:
+                    self.target_model.set_weights(self.model.get_weights())
+
+                if num_moves % self.update_after_actions == 0 and len(self.replay_buffer) >= self.learning_batch_size:
                     self.replay_experience()
 
                 if done:
@@ -202,14 +244,14 @@ class Agent():
                     break
 
                 state = next_state
-                # if i > 15:
+                if i > 50:
                     #time.sleep(0.05)
-                    # self.environment._render = True
+                    self.environment._render = True
                     # time.sleep(0.1)
 
+                num_moves += 1
+
             rewards.append(episode_reward)
-
-
 
 if __name__ == "__main__":
     conf = SnakeConfig()
@@ -217,12 +259,13 @@ if __name__ == "__main__":
     conf.grid_cell_size = 20
     conf.grid_size = 30
     conf.is_human = False
-    conf.render = True
+    conf.render = False
     conf.randomize_state = True
     conf.debug = False
     conf.method = StateAttributeType.LINEAR
 
     snake_env = SnakeEnvironment(conf)
-    config = Configuration()
-    agent = Agent(config, snake_env)
+    agent_config = AgentConfiguration()
+    agent_config.num_hidden_layers = 2
+    agent = Agent(agent_config, snake_env, conf.method)
     agent.train()

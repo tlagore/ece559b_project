@@ -126,8 +126,9 @@ class SnakeEnvironment(gym.Env):
             self._create_window_bindings()
 
         # needs to be set after snake is initialized, allows dynamic state space if we add features
-        state_space = self.get_state_features().flatten()
-        self.state_space = len(state_space)
+        state_space = self.get_state_features()
+        self.state_space_shape = state_space.shape
+        self.state_space_size = len(state_space.flatten())
 
     def debug_print(self, message):
         if self.debug:
@@ -136,25 +137,42 @@ class SnakeEnvironment(gym.Env):
     def reset(self):
         self._game_over()
 
+    def get_grayscale_from_rgb(self, rbg):
+        return 0.07 * rbg[0] + 0.72 * rbg[1] + 0.21 * rbg[2] #  / 255
+
     def get_convolution_features(self):
         # add 2 to each grid size to represent walls
-        features = np.ndarray(shape=(self.GRID_SIZE+2, self.GRID_SIZE+2, 3))
+        # head_color = self.get_grayscale_from_rgb(HEAD_COLOR)
+        # food_color = self.get_grayscale_from_rgb(FOOD_COLOR)
+        # wall_color = self.get_grayscale_from_rgb(WALL_COLOR)
+        # tail_color = self.get_grayscale_from_rgb(TAIL_COLOR)
+        # background_color = self.get_grayscale_from_rgb(BACKGROUND_COLOR)
+
+        # adding 3 to grid size since wall is outside game board
+        features = np.ndarray(shape=(self.GRID_SIZE+3, self.GRID_SIZE+3, 3))
         min = int(-self.CELL_MAX - self.GRID_CELL_WIDTH_PX)
+
+        # 2* grid width because range is not inclusive
         max = int(self.CELL_MAX + 2*self.GRID_CELL_WIDTH_PX)
         for x in range(min, max, self.GRID_CELL_WIDTH_PX):
             for y in range(min, max, self.GRID_CELL_WIDTH_PX):
+                
                 (grid_x, grid_y) = self.get_grid_coord(x,y)
                 if self.snake.xcor() == x and self.snake.ycor() == y:
-                    features[grid_x, grid_y] = HEAD_COLOR
+                    color = HEAD_COLOR
                 elif self.food.xcor() == x and self.food.ycor() == y:
-                    features[grid_x, grid_y] = FOOD_COLOR
+                    color = FOOD_COLOR
                 elif (self._wall_collision(x, y)):
-                    print("wall collision")
-                    features[grid_x, grid_y] = WALL_COLOR
+                    color = WALL_COLOR
                 elif (self._tail_collision(x,y)):
-                    features[grid_x, grid_y] = TAIL_COLOR
+                    color = TAIL_COLOR
                 else:
-                    features[grid_x, grid_y] = BACKGROUND_COLOR
+                    color = BACKGROUND_COLOR
+
+                features[grid_x, grid_y] = color
+
+                # print(x, y, grid_x, grid_y, color)
+                # input()
 
         return features
 
@@ -493,4 +511,4 @@ class SnakeEnvironment(gym.Env):
         """
         get grid x,y from pixel coordinate
         """
-        return (int((x + self.CELL_MAX) / self.GRID_CELL_WIDTH_PX), int((y+ self.CELL_MAX) / self.GRID_CELL_WIDTH_PX))
+        return (int((x + self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) + 1, int((y+ self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) + 1)
