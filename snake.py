@@ -142,14 +142,14 @@ class SnakeEnvironment(gym.Env):
 
     def get_convolution_features(self):
         # add 2 to each grid size to represent walls
-        # head_color = self.get_grayscale_from_rgb(HEAD_COLOR)
-        # food_color = self.get_grayscale_from_rgb(FOOD_COLOR)
-        # wall_color = self.get_grayscale_from_rgb(WALL_COLOR)
-        # tail_color = self.get_grayscale_from_rgb(TAIL_COLOR)
-        # background_color = self.get_grayscale_from_rgb(BACKGROUND_COLOR)
+        head_color = self.get_grayscale_from_rgb(HEAD_COLOR)
+        food_color = self.get_grayscale_from_rgb(FOOD_COLOR)
+        wall_color = self.get_grayscale_from_rgb(WALL_COLOR)
+        tail_color = self.get_grayscale_from_rgb(TAIL_COLOR)
+        background_color = self.get_grayscale_from_rgb(BACKGROUND_COLOR)
 
         # adding 3 to grid size since wall is outside game board
-        features = np.ndarray(shape=(self.GRID_SIZE+3, self.GRID_SIZE+3, 3))
+        features = np.ndarray(shape=(self.GRID_SIZE+3, self.GRID_SIZE+3, 1))
         min = int(-self.CELL_MAX - self.GRID_CELL_WIDTH_PX)
 
         # 2* grid width because range is not inclusive
@@ -159,22 +159,22 @@ class SnakeEnvironment(gym.Env):
                 
                 (grid_x, grid_y) = self.get_grid_coord(x,y)
                 if self.snake.xcor() == x and self.snake.ycor() == y:
-                    color = HEAD_COLOR
+                    color = head_color
                 elif self.food.xcor() == x and self.food.ycor() == y:
-                    color = FOOD_COLOR
+                    color = food_color
                 elif (self._wall_collision(x, y)):
-                    color = WALL_COLOR
+                    color = wall_color
                 elif (self._tail_collision(x,y)):
-                    color = TAIL_COLOR
+                    color = tail_color
                 else:
-                    color = BACKGROUND_COLOR
+                    color = background_color
 
                 features[grid_x, grid_y] = color
 
                 # print(x, y, grid_x, grid_y, color)
                 # input()
 
-        return features
+        return features.flatten()
 
     def get_linear_features(self):
         x, y = self.snake.xcor(), self.snake.ycor()

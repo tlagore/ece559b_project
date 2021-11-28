@@ -73,7 +73,7 @@ class Agent():
         self.max_steps = config.max_steps
 
         self.model = self.initialize_dqn(method)
-        self.target_model = self.initialize_dqn(method)
+        # self.target_model = self.initialize_dqn(method)
 
     def initialize_dqn(self, method: StateAttributeType):
         if method == StateAttributeType.LINEAR:
@@ -83,6 +83,8 @@ class Agent():
             return self.initialize_convolution_state_dqn()
 
     def initialize_convolution_state_dqn(self):
+        return self.initialize_linear_state_dqn()
+        """
         input_shape = self.environment.state_space_shape
         # input_size = self.environment.state_space_size
         output_size = len(self.actions)
@@ -103,6 +105,7 @@ class Agent():
         dqn.compile(optimizer=self.optimizer, loss=self.loss_fn)
         print(dqn.summary())
         return dqn
+        """
 
     def initialize_linear_state_dqn(self):
         input_size = self.environment.state_space_size
@@ -134,7 +137,7 @@ class Agent():
             action = self.rng.choice(self.actions)
             print("TRYING A RANDOM ACTION!!!")
         else:
-            predicted_values = self.target_model(state, training=False)
+            predicted_values = self.model(state, training=False)
             action = np.argmax(predicted_values)
 
         return action
@@ -165,8 +168,8 @@ class Agent():
         states = np.squeeze(states)
         next_states = np.squeeze(next_states)
 
-        targets = rewards + self.discount*(np.amax(self.target_model.predict_on_batch(next_states), axis=1))
-        # targets = rewards + self.discount*(np.amax(self.model.predict_on_batch(next_states), axis=1))
+        # targets = rewards + self.discount*(np.amax(self.target_model.predict_on_batch(next_states), axis=1))
+        targets = rewards + self.discount*(np.amax(self.model.predict_on_batch(next_states), axis=1))
         targets_full = self.model.predict_on_batch(states)
 
         ind = np.array([i for i in range(self.learning_batch_size)])
@@ -230,8 +233,8 @@ class Agent():
 
                 episode_reward += reward
 
-                if num_moves % self.update_target_netork == 0:
-                    self.target_model.set_weights(self.model.get_weights())
+                # if num_moves % self.update_target_netork == 0:
+                #     self.target_model.set_weights(self.model.get_weights())
 
                 if num_moves % self.update_after_actions == 0 and len(self.replay_buffer) >= self.learning_batch_size:
                     self.replay_experience()
@@ -248,6 +251,10 @@ class Agent():
                     #time.sleep(0.05)
                     self.environment._render = True
                     # time.sleep(0.1)
+
+                if i > 100:
+                    self.epsilon_floor = 0.0
+                    self.epsilon = 0.0
 
                 num_moves += 1
 
