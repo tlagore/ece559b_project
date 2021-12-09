@@ -5,7 +5,6 @@ from random import random
 from enum import Enum
 import threading
 import time
-import gym
 import math
 import numpy as np
 
@@ -41,8 +40,8 @@ OPPOSITES = {
 }
 
 class StateAttributeType(Enum):
-    CONVOLUTION = 0
-    LINEAR = 1
+    GRID_FEATURES = 0
+    STATE_FEATURES = 1
 
 
 @dataclass
@@ -54,9 +53,9 @@ class SnakeConfig():
     debug: bool = False
     render: bool = True
     randomize_state: bool = True
-    method: StateAttributeType = StateAttributeType.LINEAR
+    method: StateAttributeType = StateAttributeType.STATE_FEATURES
 
-class SnakeEnvironment(gym.Env):
+class SnakeEnvironment():
     metadata = {'render.modes': ['human']}
 
     action_space = [0,1,2,3]
@@ -78,6 +77,7 @@ class SnakeEnvironment(gym.Env):
         self.config = conf
 
         self.rng = np.random.default_rng(int(time.time()))
+        self.episode = 0
                 
         self.move_lock = threading.Lock()
         self.debug = conf.debug
@@ -129,6 +129,15 @@ class SnakeEnvironment(gym.Env):
         state_space = self.get_state_features()
         self.state_space_shape = state_space.shape
         self.state_space_size = len(state_space.flatten())
+
+    def full_reset(self):
+        self._game_over()
+        self.last_score = 0
+        self.score = 0
+        self.highest_score = 0
+
+    def dispose(self):
+        self.window.clear()
 
     def debug_print(self, message):
         if self.debug:
@@ -215,9 +224,9 @@ class SnakeEnvironment(gym.Env):
         return np.asarray(lst)
 
     def get_state_features(self):
-        if self.config.method == StateAttributeType.LINEAR:
+        if self.config.method == StateAttributeType.STATE_FEATURES:
             return self.get_linear_features()
-        elif self.config.method == StateAttributeType.CONVOLUTION:
+        elif self.config.method == StateAttributeType.GRID_FEATURES:
             return self.get_convolution_features()
         
 
@@ -227,12 +236,6 @@ class SnakeEnvironment(gym.Env):
         reward = self.run_step()
         state_features = self.get_state_features()
         return state_features, reward, reward == GAME_OVER_SCORE
-
-    def render(self, mode='human'):
-        pass
-
-    def close(self):
-        pass
     
     def _get_random_x_y(self):
         x = int(self.rng.integers(-self.CELL_MAX, self.CELL_MAX) / self.GRID_CELL_WIDTH_PX) * self.GRID_CELL_WIDTH_PX
@@ -295,6 +298,8 @@ class SnakeEnvironment(gym.Env):
         self.current_score_title.write(f'Score: {self.score}', move=False, font=style, align='left')
 
         if game_end:
+            self.current_episode.clear()
+            self.current_episode.write(f'Episode: {self.episode}', move=False, font=style, align='left')
             self.top_score_title.clear()
             self.top_score_title.write(f'Top Score: {self.highest_score}', move=False, font=style, align='left')
 
@@ -357,7 +362,7 @@ class SnakeEnvironment(gym.Env):
             distance_before = math.sqrt((prev_loc[0]-food_loc[0])**2 + (prev_loc[1]-food_loc[1])**2)
             distance_after = math.sqrt((next_loc[0]-food_loc[0])**2 + (next_loc[1]-food_loc[1])**2)
             
-            reward = 1 if distance_after < distance_before else -1
+            reward = 2 if distance_after < distance_before else -2
 
         self.debug_print(reward)
             
@@ -379,6 +384,10 @@ class SnakeEnvironment(gym.Env):
         self.current_score_title.speed(0)
         self.current_score_title.goto(-self.CELL_MAX, self.CELL_MAX - 10)
 
+        self.current_episode = turtle.Turtle(visible=False)
+        self.current_episode.speed(0)
+        self.current_episode.goto(-75, self.CELL_MAX - 10)
+
         self.top_score_title = turtle.Turtle(visible=False)
         self.top_score_title.speed(0)
         self.top_score_title.goto(self.CELL_MAX - 125, self.CELL_MAX - 10)
@@ -386,7 +395,7 @@ class SnakeEnvironment(gym.Env):
         self._write_score(True)
         self.snake = None
         self.current_score_title.penup()
-        
+
         self.window.title(str(self.score))
         self.window.bgcolor('white')
         width = (self.GRID_SIZE+1)*self.GRID_CELL_WIDTH_PX+(.75*self.GRID_CELL_WIDTH_PX)
@@ -467,6 +476,8 @@ class SnakeEnvironment(gym.Env):
 
         if self.score > self.highest_score:
             self.highest_score = self.score
+
+        self.last_score = self.score
 
         self.score = 0
         self._write_score(True)
