@@ -89,6 +89,8 @@ class SnakeEnvironment():
 
         # if agent is None we assume human mode
         self.is_human = conf.is_human
+
+        # disabling rendering vastly improves learning times
         self._render = conf.render
         self.randomize_state = conf.randomize_state
 
@@ -116,8 +118,6 @@ class SnakeEnvironment():
         self.highest_score = 0
         self.score = 0
 
-        ## TODO: Fix the game so if we are not in render mode that there's no grid stuff happening.
-        ## At least do a proper reset with window.reset()
         self._initialize_window()
         self._initialize_snake()
         self._initialize_food()

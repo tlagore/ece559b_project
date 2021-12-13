@@ -30,12 +30,12 @@ class AgentConfiguration():
     target_network: bool = False
 
     # Agent config
-    learning_batch_size: int = 100
-    update_after_actions: int = 6
-    update_target_network: int = 100
-    replay_buffer_size: int = 800
-    num_episodes: int = 120
-    max_steps: int = 4000
+    learning_batch_size: int = 32
+    update_after_actions: int = 4
+    update_target_network: int = 400
+    replay_buffer_size: int = 10000
+    num_episodes: int = 400
+    max_steps: int = 200
 
 @dataclass
 class TestCase():
@@ -43,6 +43,7 @@ class TestCase():
     training_rewards: dict
     test_rewards: dict
     method: StateAttributeType
+    description: str
 
     file_format = "results/{0}.pickle"
     
@@ -118,9 +119,11 @@ class Agent():
             return self.initialize_linear_state_dqn()
 
         elif method == StateAttributeType.GRID_FEATURES:
+            ## attempting to use a convolution DQN using the RGB values of individual grid cells as the features
             return self.initialize_convolution_state_dqn()
 
     def initialize_convolution_state_dqn(self):
+        ## this is not currently working, need to look into this more
         return self.initialize_linear_state_dqn()
         """
         input_shape = self.environment.state_space_shape
@@ -171,7 +174,6 @@ class Agent():
     def get_action(self, state):
         """
         """
-
         if self.epsilon > 0.0 and self.rng.random() < self.epsilon:
             action = self.rng.choice(self.actions)
             print("TRYING A RANDOM ACTION!!!")
@@ -210,16 +212,16 @@ class Agent():
         next_states = np.squeeze(next_states)
 
         if self.config.target_network:
-            targets = rewards + self.discount*(np.amax(self.target_model.predict_on_batch(next_states), axis=1))
+            value_predictions = rewards + self.discount*(np.amax(self.target_model.predict_on_batch(next_states), axis=1))
         else:
-            targets = rewards + self.discount*(np.amax(self.model.predict_on_batch(next_states), axis=1))
+            value_predictions = rewards + self.discount*(np.amax(self.model.predict_on_batch(next_states), axis=1))
 
-        targets_full = self.model.predict_on_batch(states)
+        values = self.model.predict_on_batch(states)
 
         ind = np.array([i for i in range(self.learning_batch_size)])
-        targets_full[[ind], [actions]] = targets
+        values[[ind], [actions]] = value_predictions
 
-        self.model.fit(states, targets_full, epochs=1, verbose=0)
+        self.model.fit(states, values, epochs=1, verbose=0)
 
         if self.epsilon > self.epsilon_floor:
             self.epsilon *= self.epsilon_decay
@@ -273,6 +275,10 @@ class Agent():
             rewards.append(episode_reward)
             episode_times.append(time.time() - start_time)
 
+        # do a final copy of the weights to target network
+        if self.config.target_network:
+            self.target_model.set_weights(self.model.get_weights())
+
 
         reward_iterations = {
             'episodes': list(range(0, self.num_episodes)),
@@ -287,6 +293,8 @@ class Agent():
         self.epsilon = 0.0
         self.epsilon_floor = 0.0
         self.epsilon_decay = 0.0
+
+        input("Press any key to begin testing")
 
         test_scores = []
         test_rewards = []
@@ -321,12 +329,6 @@ class Agent():
         return reward_iterations, test_iterations
 
 
-# make tensorflow use more CPU
-# session_conf = tf.ConfigProto(intra_op_parallelism_threads=8, inter_op_parallelism_threads=8)
-# tf.set_random_seed(int(time.time()))
-# sess = tf.Session(graph=tf.get_default_graph(), config=session_conf)
-# keras.backend.set_session(sess)
-
 if __name__ == "__main__":
     conf = SnakeConfig()
     conf.difficulty = 'easy'
@@ -336,54 +338,22 @@ if __name__ == "__main__":
     conf.render = False
     conf.randomize_state = True
     conf.debug = False
-    conf.method = StateAttributeType.GRID_FEATURES
+    conf.method = StateAttributeType.STATE_FEATURES
 
     # state features no target network
     snake_env = SnakeEnvironment(conf)
-    # agent_config = AgentConfiguration()
-    # agent_config.num_episodes = 120
-    # agent_config.target_network = False
-    # agent_config.num_hidden_layers = 1
-    # agent = Agent(agent_config, snake_env, conf.method)
-
-    # training_scores, test_scores = agent.train()
-    # test = TestCase(agent_config, training_scores, test_scores, conf.method)
-    # test.write_test()
-    # snake_env.full_reset()
-
-    # # state features target network
-    # agent_config = AgentConfiguration()
-    # agent_config.num_episodes = 120
-    # agent_config.target_network = True
-    # agent_config.num_hidden_layers = 1
-    # agent = Agent(agent_config, snake_env, conf.method)
-
-    # training_scores, test_scores = agent.train()
-    # test = TestCase(agent_config, training_scores, test_scores, conf.method)
-    # test.write_test()
-    # snake_env.full_reset()
-
-    # # grid features no target network
-    # snake_env.config.method = StateAttributeType.GRID_FEATURES
-    # agent_config = AgentConfiguration()
-    # agent_config.num_episodes = 120
-    # agent_config.target_network = False
-    # agent_config.num_hidden_layers = 1
-    # agent = Agent(agent_config, snake_env, conf.method)
-
-    # training_scores, test_scores = agent.train()
-    # test = TestCase(agent_config, training_scores, test_scores, conf.method)
-    # test.write_test()
-    # snake_env.full_reset()
-
-    # grid features target network
+    
+    # most effective training parameters so far
     agent_config = AgentConfiguration()
-    agent_config.num_episodes = 120
+    agent_config.num_episodes = 400
     agent_config.target_network = True
     agent_config.num_hidden_layers = 1
+    agent_config.epsilon = 0.9
+    agent_config.epsilon_decay = 0.999
+    agent_config.epsilon_floor = 0.1
+    alpha = 0.01
     agent = Agent(agent_config, snake_env, conf.method)
-
     training_scores, test_scores = agent.train()
-    test = TestCase(agent_config, training_scores, test_scores, conf.method)
+    test = TestCase(agent_config, training_scores, test_scores, conf.method, 'Higher batch memory, higher epsilon, lower batch size')
     test.write_test()
     snake_env.full_reset()
