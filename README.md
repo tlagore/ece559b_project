@@ -1,2 +1,2 @@
-# ece559b_project
-snake reinforcement learning
+# Snake played by agent through deep reinforcement learning
+snake deep reinforcement learning
