@@ -1,7 +1,5 @@
 # python libraries
 from dataclasses import dataclass
-import enum
-from random import random
 from enum import Enum
 import threading
 import time

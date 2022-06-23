@@ -10,11 +10,6 @@ import tensorflow as tf
 
 from tensorflow import keras
 from tensorflow.keras import layers, losses
-from tensorflow.python.keras.backend import convert_inputs_if_ragged
-from tensorflow.python.ops.gen_math_ops import Exp
-from tensorflow.python.ops.math_ops import multiply
-
-import pandas as pd
 
 from snake import SnakeEnvironment, SnakeConfig, StateAttributeType
 
@@ -354,6 +349,6 @@ if __name__ == "__main__":
     alpha = 0.01
     agent = Agent(agent_config, snake_env, conf.method)
     training_scores, test_scores = agent.train()
-    test = TestCase(agent_config, training_scores, test_scores, conf.method, 'Higher batch memory, higher epsilon, lower batch size')
-    test.write_test()
+    # test = TestCase(agent_config, training_scores, test_scores, conf.method, 'Higher batch memory, higher epsilon, lower batch size')
+    # test.write_test()
     snake_env.full_reset()
